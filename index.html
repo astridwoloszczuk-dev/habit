@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Habit">
+<meta name="theme-color" content="#0d1117">
+<link rel="apple-touch-icon" href="icon-192.svg">
+<link rel="manifest" href="manifest.json">
+<title>Habit</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--sf:#161b22;--s2:#1c2330;
+  --b1:rgba(255,255,255,0.08);--b2:rgba(255,255,255,0.18);
+  --tx:#e6edf3;--mu:#7d8590;--ac:#c8a96e;
+  --gn:#4ade80;--ye:#fbbf24;--rd:#f87171;--bl:#60a5fa;--pu:#c084fc;
+  /* row group tints */
+  --body:#60a5fa;--mind:#c084fc;--nutr:#4ade80;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:15px;color:var(--tx);
+  background:var(--bg);min-height:100vh;-webkit-text-size-adjust:100%;
+  padding:0 12px calc(env(safe-area-inset-bottom) + 28px)}
+button{font-family:inherit}
+
+.hdr{padding:calc(env(safe-area-inset-top) + 14px) 4px 10px;display:flex;align-items:baseline;gap:10px}
+.hdr h1{font-size:18px;font-weight:700}
+.hdr span{font-size:12px;color:var(--mu)}
+
+/* ── banner: readiness + ONE do/don't line. Nothing else. ─────── */
+.banner{border:1px solid var(--b1);border-radius:12px;padding:12px 14px;margin-bottom:14px;
+  display:flex;align-items:center;gap:14px;background:var(--sf)}
+.banner .score{font-size:30px;font-weight:800;line-height:1;min-width:52px;text-align:center}
+.banner .score small{display:block;font-size:9px;font-weight:600;color:var(--mu);letter-spacing:1px;margin-top:3px}
+.banner .line{flex:1;font-size:14px;line-height:1.45;font-weight:600}
+.banner .line em{display:block;font-style:normal;font-weight:400;font-size:11.5px;color:var(--mu);margin-top:3px}
+.banner.good{border-color:rgba(74,222,128,.45)}
+.banner.good .score{color:var(--gn)}
+.banner.mid{border-color:rgba(251,191,36,.45)}
+.banner.mid .score{color:var(--ye)}
+.banner.low{border-color:rgba(248,113,113,.45)}
+.banner.low .score{color:var(--rd)}
+.banner.none{border-style:dashed}
+.banner.none .score{color:var(--mu);font-size:20px}
+
+/* ── week nav ─────────────────────────────────────────────────── */
+.wknav{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.wknav button{width:38px;height:38px;border:1px solid var(--b2);border-radius:9px;background:var(--sf);
+  color:var(--tx);font-size:17px;cursor:pointer;flex-shrink:0}
+.wknav .lbl{flex:1;text-align:center}
+.wknav .lbl b{display:block;font-size:14px;font-weight:700}
+.wknav .lbl span{display:block;font-size:11px;color:var(--mu);margin-top:1px}
+
+/* ── the grid ─────────────────────────────────────────────────── */
+.grid{display:grid;grid-template-columns:82px repeat(7,1fr);gap:4px;align-items:stretch}
+.gh{font-size:10px;color:var(--mu);text-align:center;text-transform:uppercase;letter-spacing:.8px;
+  padding-bottom:4px;font-weight:600}
+.gh.today{color:var(--ac);font-weight:800}
+.grouplbl{grid-column:1/-1;font-size:9.5px;text-transform:uppercase;letter-spacing:1.4px;font-weight:700;
+  margin:12px 0 2px;padding-bottom:3px;border-bottom:1px solid var(--b1)}
+.rowlbl{font-size:11.5px;display:flex;align-items:center;gap:5px;padding-right:4px;line-height:1.2}
+.rowlbl .aim{font-size:9px;color:var(--mu)}
+.cell{height:40px;border-radius:8px;border:1px solid var(--b2);background:var(--s2);color:var(--mu);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none;
+  font-size:12px;padding:0;transition:background .12s,border-color .12s}
+.cell .v{font-size:12.5px;font-weight:700;line-height:1}
+.cell .u{font-size:8px;letter-spacing:.3px;opacity:.75;line-height:1}
+.cell.today{border-color:var(--ac)}
+.cell.future{opacity:.4}
+.cell.on{color:#0d1117;font-weight:800}
+.cell.dim{background:rgba(255,255,255,.04)}
+/* filled states, per group */
+.cell.g-body.on{background:rgba(96,165,250,.85);border-color:#60a5fa}
+.cell.g-mind.on{background:rgba(192,132,252,.85);border-color:#c084fc}
+.cell.g-nutr.on{background:rgba(74,222,128,.85);border-color:#4ade80}
+/* partial fills use a softer tint */
+.cell.g-body.part{background:rgba(96,165,250,.30);border-color:rgba(96,165,250,.7);color:#bfdbfe}
+.cell.g-mind.part{background:rgba(192,132,252,.30);border-color:rgba(192,132,252,.7);color:#e9d5ff}
+.cell.g-nutr.part{background:rgba(74,222,128,.30);border-color:rgba(74,222,128,.7);color:#bbf7d0}
+/* alcohol escalates — it is the one row where more is worse */
+.cell.alc1{background:rgba(255,220,50,.22);border-color:#ffd932;color:#ffd932}
+.cell.alc2{background:rgba(255,185,0,.28);border-color:#ffb900;color:#ffb900}
+.cell.alc3{background:rgba(255,130,0,.30);border-color:#ff8200;color:#ff8200}
+.cell.alc4{background:rgba(235,80,0,.32);border-color:#eb5000;color:#ff8a5c}
+.cell.alc5{background:rgba(248,113,113,.34);border-color:#f87171;color:#f87171}
+
+.foot{margin-top:18px;font-size:11.5px;color:var(--mu);line-height:1.6}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 20px);
+  background:#232b3a;border:1px solid var(--b2);color:var(--tx);padding:10px 16px;border-radius:10px;
+  font-size:13px;z-index:600;opacity:0;pointer-events:none;transition:opacity .18s;max-width:88vw;text-align:center}
+.toast.on{opacity:1}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--b2);border-top-color:var(--ac);
+  border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="hdr"><h1>Habit</h1><span id="hsub"></span></div>
+<div id="banner" class="banner none"><div class="score">—</div><div class="line">Readiness loading…</div></div>
+<div id="wknav"></div>
+<div id="grid" class="grid"></div>
+<div class="foot">
+  Tap to advance a cell · long-press to clear it.<br>
+  This grid <b>records</b> what happened. Runs are planned in Outlook — deliberately not here.
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════
+   habit — the Mon–Sun record-only grid.
+
+   No streaks, no badges, no chains, no planning. Accountability is
+   the coach reading the data, not the app congratulating her. If a
+   future version grows a streak counter, that's the bug.
+
+   Astrid-only: no auth beyond the family-PWA pattern (her call —
+   the threat model doesn't warrant it here). Anon key + open table.
+   ═══════════════════════════════════════════════════════════════ */
+const SB_URL = 'https://ykbabwkyojlwculjmbrw.supabase.co';   // astrid-efficiency
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrYmFid2t5b2psd2N1bGptYnJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MTg0NzMsImV4cCI6MjA5MjA5NDQ3M30.4lYnVcgv1o9OvXGMtrbjwKhXZ8Yybqln08aci_ZM9mI';
+
+const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+/* ── ROW DEFINITIONS ──────────────────────────────────────────────
+   Each row says how a tap changes the value and how to draw it.
+   `col` is the DB column on daily_habits.
+──────────────────────────────────────────────────────────────────── */
+const RUN_CYCLE = ['', 'z2', 'tempo', 'vo2'];
+const RUN_LABEL = {'':'', z2:'Z2', tempo:'TMP', vo2:'VO2'};
+const WIND_LABEL = ['', '🙁', '🙂', '😇'];
+
+const GROUPS = [
+  {id:'body', label:'Body', tint:'var(--body)', rows:[
+    {col:'run_type',    label:'Runs',       kind:'cycle',  cycle:RUN_CYCLE, draw:v=>RUN_LABEL[v||'']||''},
+    {col:'weights',     label:'Weights',    kind:'toggle', aim:'2×/wk'},
+    {col:'mobility',    label:'Mobility',   kind:'toggle'},
+    {col:'stretch',     label:'Stretching', kind:'toggle'},
+  ]},
+  {id:'mind', label:'Mind', tint:'var(--mind)', rows:[
+    {col:'breath',      label:'Breath',     kind:'toggle'},
+    {col:'winddown',    label:'Wind-down',  kind:'step3', draw:v=>WIND_LABEL[Number(v)||0]||''},
+  ]},
+  {id:'nutr', label:'Nutrition', tint:'var(--nutr)', rows:[
+    {col:'protein_g',   label:'Protein',    kind:'accrete', step:20, unit:'g',  target:115},
+    {col:'water_glasses',label:'Water',     kind:'accrete', step:1,  unit:'gl', target:6},
+    {col:'supplements', label:'Supplements',kind:'toggle'},
+    {col:'alcohol',     label:'Alcohol',    kind:'accrete', step:1,  unit:'u',  risk:true},
+  ]},
+];
+const ALL_ROWS = GROUPS.flatMap(g => g.rows.map(r => ({...r, group:g.id})));
+
+/* ── helpers ─────────────────────────────────────────────────── */
+function el(id){ return document.getElementById(id); }
+function ymd(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function monday(d){
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = x.getDay();
+  x.setDate(x.getDate() - (dow===0 ? 6 : dow-1));
+  return x;
+}
+function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+function fmtDay(d){ return d.getDate()+' '+MONTHS[d.getMonth()]; }
+function fmtRange(m){ const s=addDays(m,6); return fmtDay(m)+' – '+fmtDay(s)+' '+s.getFullYear(); }
+const TODAY = ymd(new Date());
+
+let toastT=null;
+function toast(m){ const t=el('toast'); t.textContent=m; t.classList.add('on');
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2000); }
+
+/* ── data ────────────────────────────────────────────────────── */
+let WEEK = monday(new Date());
+let DAYS = {};      // ymd -> row object from daily_habits
+
+async function sb(path, {method='GET', body=null, prefer=null}={}){
+  const headers = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
+  if (prefer) headers.Prefer = prefer;
+  const r = await fetch(SB_URL+'/rest/v1/'+path, {method, headers, body: body!=null?JSON.stringify(body):undefined});
+  if (!r.ok) throw new Error('DB '+r.status+' '+(await r.text().catch(()=>'')).slice(0,160));
+  if (r.status===204) return null;
+  const t = await r.text();
+  return t ? JSON.parse(t) : null;
+}
+
+async function loadWeek(){
+  const a = ymd(WEEK), b = ymd(addDays(WEEK,6));
+  const rows = await sb(`daily_habits?select=*&date=gte.${a}&date=lte.${b}`) || [];
+  DAYS = {};
+  for (const r of rows) DAYS[r.date] = r;
+}
+
+function val(dk, col){
+  const r = DAYS[dk];
+  if (!r) return (col === 'run_type') ? '' : 0;
+  const v = r[col];
+  if (col === 'run_type') return v || '';
+  return v == null ? 0 : Number(v);
+}
+
+// Only ever writes the ONE column that changed, so nothing else on the row
+// gets clobbered by a stale local copy.
+async function setVal(dk, col, v){
+  DAYS[dk] = {...(DAYS[dk]||{date:dk}), [col]: v};
+  render();
+  try {
+    await sb('daily_habits', {method:'POST', prefer:'resolution=merge-duplicates,return=minimal',
+      body:{date:dk, [col]:v, updated_at:new Date().toISOString()}});
+  } catch(e){
+    toast('Not saved — ' + e.message);
+    await loadWeek(); render();
+  }
+}
+
+/* ── tap semantics ───────────────────────────────────────────── */
+function nextValue(row, cur){
+  switch(row.kind){
+    case 'toggle':  return cur ? 0 : 1;
+    case 'step3':   return (Number(cur)+1) % 4;               // 0 → 🙁 → 🙂 → 😇 → 0
+    case 'cycle':   return row.cycle[(row.cycle.indexOf(cur||'')+1) % row.cycle.length];
+    case 'accrete': return Number(cur) + row.step;
+  }
+}
+function clearValue(row){ return row.kind === 'cycle' ? '' : 0; }
+
+function tapCell(dk, colIdx){
+  const row = ALL_ROWS[colIdx];
+  setVal(dk, row.col, nextValue(row, val(dk, row.col)));
+}
+function clearCell(dk, colIdx){
+  const row = ALL_ROWS[colIdx];
+  setVal(dk, row.col, clearValue(row));
+  try { navigator.vibrate(25); } catch {}
+}
+
+/* long-press = clear. Same gesture the old tracker used. */
+let lpTimer=null, lpFired=false;
+function pressStart(dk, i){
+  lpFired=false;
+  clearTimeout(lpTimer);
+  lpTimer = setTimeout(()=>{ lpFired=true; clearCell(dk,i); }, 480);
+}
+function pressEnd(dk, i){
+  clearTimeout(lpTimer);
+  if (!lpFired) tapCell(dk,i);
+}
+function pressCancel(){ clearTimeout(lpTimer); lpFired=true; }
+
+/* ── render ──────────────────────────────────────────────────── */
+function cellClass(row, v, dk){
+  const cls = ['cell', 'g-'+row.group];
+  if (dk === TODAY) cls.push('today');
+  if (dk > TODAY) cls.push('future');
+  const n = row.kind === 'cycle' ? (v ? 1 : 0) : Number(v);
+  if (!n) return cls.join(' ');
+  if (row.risk){                                    // alcohol: escalating warmth
+    cls.push('alc' + Math.min(5, n));
+    return cls.join(' ');
+  }
+  if (row.kind === 'accrete' && row.target)
+    cls.push(n >= row.target ? 'on' : 'part');
+  else if (row.kind === 'step3')
+    cls.push(n >= 3 ? 'on' : 'part');
+  else
+    cls.push('on');
+  return cls.join(' ');
+}
+
+function cellInner(row, v){
+  if (row.draw){ const s = row.draw(v); return s ? `<span class="v">${s}</span>` : ''; }
+  if (row.kind === 'toggle') return Number(v) ? `<span class="v">✓</span>` : '';
+  if (row.kind === 'accrete'){
+    const n = Number(v);
+    return n ? `<span class="v">${n}</span><span class="u">${row.unit}</span>` : '';
+  }
+  return '';
+}
+
+function render(){
+  const days = Array.from({length:7}, (_,i)=>{
+    const d = addDays(WEEK,i); return {d, dk: ymd(d), lbl: DAY_SHORT[i]};
+  });
+
+  el('wknav').innerHTML = `<div class="wknav">
+    <button onclick="stepWeek(-1)" aria-label="Previous week">‹</button>
+    <div class="lbl"><b>${ymd(WEEK)===ymd(monday(new Date())) ? 'This week' : fmtRange(WEEK)}</b>
+      <span>${ymd(WEEK)===ymd(monday(new Date())) ? fmtRange(WEEK) : ''}</span></div>
+    <button onclick="stepWeek(1)" aria-label="Next week">›</button></div>`;
+
+  let h = `<div></div>` + days.map(x =>
+    `<div class="gh ${x.dk===TODAY?'today':''}">${x.lbl}<br>${x.d.getDate()}</div>`).join('');
+
+  let idx = 0;
+  for (const g of GROUPS){
+    h += `<div class="grouplbl" style="color:${g.tint}">${g.label}</div>`;
+    for (const row of g.rows){
+      const i = idx++;
+      // Weights carries its aim (2×/wk) inline — the only place a target is shown,
+      // because it is the non-negotiable one.
+      const doneN = days.filter(x => !!val(x.dk, row.col)).length;
+      h += `<div class="rowlbl">${row.label}${row.aim?`<span class="aim">${doneN}/2</span>`:''}</div>`;
+      for (const x of days){
+        const v = val(x.dk, row.col);
+        h += `<button class="${cellClass(row,v,x.dk)}"
+          onpointerdown="pressStart('${x.dk}',${i})"
+          onpointerup="pressEnd('${x.dk}',${i})"
+          onpointerleave="pressCancel()"
+          onpointercancel="pressCancel()"
+          oncontextmenu="return false"
+          aria-label="${row.label} ${x.lbl}">${cellInner(row,v)}</button>`;
+      }
+    }
+  }
+  el('grid').innerHTML = h;
+  el('hsub').textContent = fmtRange(WEEK);
+}
+
+function stepWeek(n){ WEEK = addDays(WEEK, n*7); boot(false); }
+
+/* ═══════════════════════════════════════════════════════════════
+   BANNER — readiness + exactly one do/don't line.
+
+   Rule-based off the readiness garmin_sync.py already computes. No
+   LLM call, ever: this has to be instant and identical every time.
+   Source order: the garmin_readiness table (written by James), then
+   the goal-tracker Pages copy of garmin_status.js as a fallback,
+   which works because GitHub Pages serves both repos on one origin.
+   ═══════════════════════════════════════════════════════════════ */
+async function loadReadiness(){
+  // 1 · the table
+  try {
+    const rows = await sb('garmin_readiness?select=*&order=date.desc&limit=1');
+    if (rows && rows.length) return {
+      date: rows[0].date, score: rows[0].score,
+      sessions: rows[0].sessions || {}, summary: rows[0].summary || '',
+    };
+  } catch {}
+  // 2 · same-origin fallback: the static file garmin_sync.py commits
+  try {
+    const r = await fetch('../goal-tracker/garmin_status.js', {cache:'no-store'});
+    if (r.ok){
+      const txt = await r.text();
+      const m = txt.match(/window\.GARMIN\s*=\s*([\s\S]*?);\s*$/);
+      if (m){
+        const g = JSON.parse(m[1]);
+        return {date:g.date, score:(g.readiness||{}).score,
+                sessions:(g.readiness||{}).sessions||{}, summary:(g.readiness||{}).summary||''};
+      }
+    }
+  } catch {}
+  return null;
+}
+
+// One line. Green light for the hardest thing that's cleared, or the
+// clearest "not today" if nothing hard is.
+function doDontLine(r){
+  const s = r.sessions || {};
+  const ok = k => s[k] && s[k].status === 'good';
+  const why = k => (s[k] && s[k].reason) ? s[k].reason : '';
+  if (ok('VO2 Max'))  return {t:'Green for VO2.',            e:why('VO2 Max')};
+  if (ok('Tempo'))    return {t:'Green for tempo.',          e:why('Tempo')};
+  if (ok('Long Run')) return {t:'Green for a long run.',     e:why('Long Run')};
+  if (ok('Zone 2'))   return {t:'Not the day for tempo — Z2 only.', e:why('Zone 2')};
+  if (ok('Weights'))  return {t:'Not the day for running — lift instead.', e:why('Weights')};
+  if (ok('Mobility')) return {t:'Recovery day. Mobility only.', e:why('Mobility')};
+  return {t:'Recovery day.', e:'Nothing is showing green.'};
+}
+
+async function renderBanner(){
+  const r = await loadReadiness();
+  const b = el('banner');
+  if (!r || r.score == null){
+    b.className = 'banner none';
+    b.innerHTML = `<div class="score">—</div><div class="line">No readiness data.
+      <em>garmin_sync.py hasn't reported yet.</em></div>`;
+    return;
+  }
+  const stale = r.date !== TODAY;
+  const band = r.score >= 70 ? 'good' : r.score >= 50 ? 'mid' : 'low';
+  const line = doDontLine(r);
+  b.className = 'banner ' + band;
+  b.innerHTML = `<div class="score">${r.score}<small>READY</small></div>
+    <div class="line">${line.t}<em>${line.e}${stale ? ' · from ' + r.date : ''}</em></div>`;
+}
+
+/* ── boot ────────────────────────────────────────────────────── */
+async function boot(withBanner){
+  try {
+    await loadWeek();
+    render();
+  } catch(e){
+    el('grid').innerHTML = `<div style="grid-column:1/-1;color:var(--rd);font-size:13px;padding:10px 0">
+      Couldn't load: ${e.message}</div>`;
+  }
+  if (withBanner !== false) renderBanner();
+}
+boot(true);
+</script>
+</body>
+</html>
