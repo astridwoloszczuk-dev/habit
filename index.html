@@ -74,6 +74,12 @@ button{font-family:inherit}
    flips the text to near-black, so if a group class ever fails to match again the
    cell must still be readable rather than dark-on-dark */
 .cell.dim{background:rgba(255,255,255,.04)}
+.notebox{margin:18px 0 8px}
+.notehdr{font-size:10px;text-transform:uppercase;letter-spacing:1.2px;color:var(--mu);
+  font-weight:600;margin-bottom:6px;display:flex;justify-content:space-between;align-items:baseline}
+.notemsg{font-size:10px;text-transform:none;letter-spacing:0;color:var(--mu);font-weight:400}
+.notebox textarea{width:100%;padding:9px 11px;border:1px solid var(--b2);border-radius:9px;
+  background:var(--s2);color:var(--tx);font-size:15px;font-family:inherit;line-height:1.5;resize:vertical}
 /* filled states, per group */
 .cell.g-body.on{background:rgba(96,165,250,.85);border-color:#60a5fa}
 .cell.g-mind.on{background:rgba(192,132,252,.85);border-color:#c084fc}
@@ -105,6 +111,7 @@ button{font-family:inherit}
 <div id="banner" class="banner none"><div class="score">—</div><div class="line">Readiness loading…</div></div>
 <div id="wknav"></div>
 <div id="grid" class="grid"></div>
+  <div id="notebox" class="notebox"></div>
 <div class="foot">
   Tap to advance a cell · long-press to clear it.<br>
   This grid <b>records</b> what happened. Runs are planned in Outlook — deliberately not here.
@@ -195,6 +202,43 @@ async function loadWeek(){
   const rows = await sb(`daily_habits?select=*&date=gte.${a}&date=lte.${b}`) || [];
   DAYS = {};
   for (const r of rows) DAYS[r.date] = r;
+
+  // The week's note. Fails soft: without the migration the box still renders
+  // and simply will not persist, rather than taking the grid down with it.
+  try {
+    const n = await sb(`habit_notes?select=note&week_start=eq.${a}`);
+    NOTE = (n && n[0] && n[0].note) || '';
+  } catch(e){ NOTE = ''; console.warn('habit note unavailable', e); }
+}
+
+/* ── the week's note ─────────────────────────────────────────────
+   Her ask, 8 Aug: room to explain a week — the sort of thing a coach
+   would otherwise take her apart for without knowing.
+
+   It goes to the SUNDAY COACH, and nowhere near Wes: this app holds
+   alcohol, nutrition and mood, and reusing `weekly_notes` would have
+   printed it straight into his digest.
+
+   Saved on blur and debounced while typing, because a note you must
+   remember to save is a note that gets lost — and this one is written
+   at the end of a week, at the exact moment attention is lowest. */
+let NOTE = '', noteTimer = null;
+
+async function saveNote(){
+  const v = el('wknote').value;
+  NOTE = v;
+  try {
+    await sb('habit_notes', {method:'POST', prefer:'resolution=merge-duplicates,return=minimal',
+      body:{week_start: ymd(WEEK), note: v || null, updated_at: new Date().toISOString()}});
+    const m = el('notemsg'); if (m){ m.textContent = 'saved'; setTimeout(()=>{ if(m) m.textContent=''; }, 1600); }
+  } catch(e){
+    const m = el('notemsg'); if (m) m.textContent = 'not saved — ' + e.message.slice(0,60);
+  }
+}
+function noteTyped(){
+  const m = el('notemsg'); if (m) m.textContent = '…';
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(saveNote, 1200);
 }
 
 function val(dk, col){
@@ -327,6 +371,21 @@ function render(){
   }
   el('grid').innerHTML = h;
   el('hsub').textContent = fmtRange(WEEK);
+
+  const nb = el('notebox');
+  if (nb){
+    // only rebuilt when the week changes, so typing is never interrupted
+    if (nb.dataset.wk !== ymd(WEEK)){
+      nb.dataset.wk = ymd(WEEK);
+      nb.innerHTML = `<div class="notehdr">Anything worth knowing about this week
+          <span id="notemsg" class="notemsg"></span></div>
+        <textarea id="wknote" rows="3" placeholder="Travel, illness, a 3am flight — whatever the numbers do not say."
+          oninput="noteTyped()" onblur="saveNote()"></textarea>`;
+      el('wknote').value = NOTE;
+    } else if (el('wknote') && document.activeElement !== el('wknote')){
+      el('wknote').value = NOTE;
+    }
+  }
 }
 
 function stepWeek(n){ WEEK = addDays(WEEK, n*7); boot(false); }
