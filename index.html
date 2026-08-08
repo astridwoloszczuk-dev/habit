@@ -203,12 +203,27 @@ async function loadWeek(){
   DAYS = {};
   for (const r of rows) DAYS[r.date] = r;
 
-  // The week's note. Fails soft: without the migration the box still renders
-  // and simply will not persist, rather than taking the grid down with it.
+  /* The week's note, with a LOCAL DRAFT as the safety net.
+
+     8 Aug: she typed a week's notes into this box and lost them. The table did
+     not exist yet, every save 404'd, and the only warning was a 10px grey
+     "not saved" beside the heading. That is an absurd way to tell someone their
+     typing is being discarded.
+
+     So the text is now written to localStorage on every keystroke, before any
+     network call. If the server has nothing — table missing, offline, request
+     failed — the draft comes back and says so plainly. Typed text is the one
+     thing in this app that cannot be reconstructed from anywhere else. */
+  let remote = null;
   try {
     const n = await sb(`habit_notes?select=note&week_start=eq.${a}`);
-    NOTE = (n && n[0] && n[0].note) || '';
-  } catch(e){ NOTE = ''; console.warn('habit note unavailable', e); }
+    remote = (n && n[0] && n[0].note) || '';
+    NOTE_OK = true;
+  } catch(e){ NOTE_OK = false; console.warn('habit note unavailable', e); }
+
+  const draft = localStorage.getItem('habitnote_' + a) || '';
+  NOTE = (remote && remote.trim()) ? remote : draft;
+  NOTE_UNSAVED = !!(draft.trim() && draft !== (remote || ''));
 }
 
 /* ── the week's note ─────────────────────────────────────────────
@@ -222,21 +237,36 @@ async function loadWeek(){
    Saved on blur and debounced while typing, because a note you must
    remember to save is a note that gets lost — and this one is written
    at the end of a week, at the exact moment attention is lowest. */
-let NOTE = '', noteTimer = null;
+let NOTE = '', noteTimer = null, NOTE_OK = true, NOTE_UNSAVED = false;
+
+function noteMsg(text, bad){
+  const m = el('notemsg');
+  if (!m) return;
+  m.textContent = text;
+  m.style.color = bad ? 'var(--rd)' : 'var(--mu)';
+  m.style.fontWeight = bad ? '700' : '400';
+}
 
 async function saveNote(){
   const v = el('wknote').value;
   NOTE = v;
+  // LOCAL FIRST, ALWAYS. Whatever the server does next, the text survives.
+  try { localStorage.setItem('habitnote_' + ymd(WEEK), v); } catch(e){}
   try {
     await sb('habit_notes', {method:'POST', prefer:'resolution=merge-duplicates,return=minimal',
       body:{week_start: ymd(WEEK), note: v || null, updated_at: new Date().toISOString()}});
-    const m = el('notemsg'); if (m){ m.textContent = 'saved'; setTimeout(()=>{ if(m) m.textContent=''; }, 1600); }
+    NOTE_UNSAVED = false;
+    noteMsg('saved', false);
+    setTimeout(()=>{ if (!NOTE_UNSAVED) noteMsg('', false); }, 1600);
   } catch(e){
-    const m = el('notemsg'); if (m) m.textContent = 'not saved — ' + e.message.slice(0,60);
+    NOTE_UNSAVED = true;
+    // stays on screen: this is the message that was missed
+    noteMsg('NOT saved to the server — kept on this device only', true);
   }
 }
 function noteTyped(){
-  const m = el('notemsg'); if (m) m.textContent = '…';
+  try { localStorage.setItem('habitnote_' + ymd(WEEK), el('wknote').value); } catch(e){}
+  if (!NOTE_UNSAVED) noteMsg('…', false);
   clearTimeout(noteTimer);
   noteTimer = setTimeout(saveNote, 1200);
 }
@@ -382,6 +412,7 @@ function render(){
         <textarea id="wknote" rows="3" placeholder="Travel, illness, a 3am flight — whatever the numbers do not say."
           oninput="noteTyped()" onblur="saveNote()"></textarea>`;
       el('wknote').value = NOTE;
+      if (NOTE_UNSAVED) noteMsg('NOT saved to the server — kept on this device only', true);
     } else if (el('wknote') && document.activeElement !== el('wknote')){
       el('wknote').value = NOTE;
     }
