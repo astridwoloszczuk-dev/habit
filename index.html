@@ -477,31 +477,18 @@ function stepWeek(n){ WEEK = addDays(WEEK, n*7); boot(false); }
 
    Rule-based off the readiness garmin_sync.py already computes. No
    LLM call, ever: this has to be instant and identical every time.
-   Source order: the garmin_readiness table (written by James), then
-   the goal-tracker Pages copy of garmin_status.js as a fallback,
-   which works because GitHub Pages serves both repos on one origin.
+   Source: the student-only garmin_readiness table, written by James.
+   (Until 27 Sep 2026 this really came from garmin_status.js on the
+   public goal-tracker Pages site — sleep, HRV and resting HR out in
+   the open; the table had never been written. Both fixed that day.)
    ═══════════════════════════════════════════════════════════════ */
 async function loadReadiness(){
-  // 1 · the table
   try {
     const rows = await sb('garmin_readiness?select=*&order=date.desc&limit=1');
     if (rows && rows.length) return {
       date: rows[0].date, score: rows[0].score,
       sessions: rows[0].sessions || {}, summary: rows[0].summary || '',
     };
-  } catch {}
-  // 2 · same-origin fallback: the static file garmin_sync.py commits
-  try {
-    const r = await fetch('../goal-tracker/garmin_status.js', {cache:'no-store'});
-    if (r.ok){
-      const txt = await r.text();
-      const m = txt.match(/window\.GARMIN\s*=\s*([\s\S]*?);\s*$/);
-      if (m){
-        const g = JSON.parse(m[1]);
-        return {date:g.date, score:(g.readiness||{}).score,
-                sessions:(g.readiness||{}).sessions||{}, summary:(g.readiness||{}).summary||''};
-      }
-    }
   } catch {}
   return null;
 }
