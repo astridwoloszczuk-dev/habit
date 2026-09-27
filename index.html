@@ -128,8 +128,13 @@ button{font-family:inherit}
    the coach reading the data, not the app congratulating her. If a
    future version grows a streak counter, that's the bug.
 
-   Astrid-only: no auth beyond the family-PWA pattern (her call —
-   the threat model doesn't warrant it here). Anon key + open table.
+   SIGNED IN since 27 Sep 2026. It was anon + open table (July: "the
+   threat model doesn't warrant it") — until it turned out that the
+   anon key ships in these public repos, so alcohol, protein and
+   wind-down were readable AND writable by anyone who looked. The
+   session is golf-coach's own (`gc_session`, same origin), so a
+   device signed in there is signed in here. RLS lets only the
+   student through: Wes's token reads nothing.
    ═══════════════════════════════════════════════════════════════ */
 const SB_URL = 'https://ykbabwkyojlwculjmbrw.supabase.co';   // astrid-efficiency
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlrYmFid2t5b2psd2N1bGptYnJ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MTg0NzMsImV4cCI6MjA5MjA5NDQ3M30.4lYnVcgv1o9OvXGMtrbjwKhXZ8Yybqln08aci_ZM9mI';
@@ -187,10 +192,55 @@ function toast(m){ const t=el('toast'); t.textContent=m; t.classList.add('on');
 let WEEK = monday(new Date());
 let DAYS = {};      // ymd -> row object from daily_habits
 
+/* ── sign-in: golf-coach's session, shared through localStorage ──
+   Both apps rotate the same refresh token, so ALWAYS re-read storage
+   before trusting or refreshing it — a copy held in memory may have
+   been spent by the other app since, and refreshing with a spent
+   token is what signs you out. */
+const SESS_KEY = 'gc_session';
+class NeedSignIn extends Error {}
+
+function readSession(){
+  try { return JSON.parse(localStorage.getItem(SESS_KEY) || 'null'); } catch { return null; }
+}
+function writeSession(s){
+  if (!s) { localStorage.removeItem(SESS_KEY); return; }
+  localStorage.setItem(SESS_KEY, JSON.stringify({
+    access_token: s.access_token, refresh_token: s.refresh_token,
+    expires_at: s.expires_at || (Math.floor(Date.now()/1000) + (s.expires_in || 3600)),
+  }));
+}
+async function authFetch(path, body){
+  const r = await fetch(SB_URL+'/auth/v1/'+path, {method:'POST',
+    headers:{apikey:SB_KEY, 'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(j.error_description || j.msg || j.message || ('HTTP '+r.status));
+  return j;
+}
+async function validToken(){
+  const s = readSession();
+  if (!s || !s.access_token) return null;
+  if (s.expires_at - 60 > Math.floor(Date.now()/1000)) return s.access_token;
+  if (!s.refresh_token) return null;
+  try {
+    writeSession(await authFetch('token?grant_type=refresh_token', {refresh_token: s.refresh_token}));
+  } catch {
+    // The other app may have refreshed in the meantime: only give up if
+    // storage still holds the token that just failed.
+    const now = readSession();
+    if (now && now.refresh_token !== s.refresh_token) return validToken();
+    writeSession(null); return null;
+  }
+  return readSession().access_token;
+}
+
 async function sb(path, {method='GET', body=null, prefer=null}={}){
-  const headers = {apikey:SB_KEY, Authorization:'Bearer '+SB_KEY, 'Content-Type':'application/json'};
+  const tok = await validToken();
+  if (!tok) throw new NeedSignIn('signed out');
+  const headers = {apikey:SB_KEY, Authorization:'Bearer '+tok, 'Content-Type':'application/json'};
   if (prefer) headers.Prefer = prefer;
   const r = await fetch(SB_URL+'/rest/v1/'+path, {method, headers, body: body!=null?JSON.stringify(body):undefined});
+  if (r.status === 401) throw new NeedSignIn('session rejected');
   if (!r.ok) throw new Error('DB '+r.status+' '+(await r.text().catch(()=>'')).slice(0,160));
   if (r.status===204) return null;
   const t = await r.text();
@@ -288,6 +338,7 @@ async function setVal(dk, col, v){
     await sb('daily_habits', {method:'POST', prefer:'resolution=merge-duplicates,return=minimal',
       body:{date:dk, [col]:v, updated_at:new Date().toISOString()}});
   } catch(e){
+    if (e instanceof NeedSignIn) { showSignIn('Your session ended — that tap was not saved.'); return; }
     toast('Not saved — ' + e.message);
     await loadWeek(); render();
   }
@@ -487,12 +538,75 @@ async function renderBanner(){
     <div class="line">${line.t}<em>${line.e}${stale ? ' · from ' + r.date : ''}</em></div>`;
 }
 
+/* ── sign-in panel ───────────────────────────────────────────────
+   Only seen on a device where golf-coach has never been signed in —
+   in practice the home-screen copy on a phone, which keeps its own
+   storage. A PASTE box, not just a link: emailed links open in the
+   wrong browser on Android (see golf-coach, 31 Jul). */
+const canonEmail = e => String(e||'').trim().toLowerCase().replace(/@gmail\.com$/, '@googlemail.com');
+
+function showSignIn(msg){
+  el('banner').style.display = 'none';
+  el('wknav').innerHTML = ''; el('notebox').innerHTML = ''; el('notebox').dataset.wk = '';
+  el('grid').innerHTML = `<div style="grid-column:1/-1;font-size:13.5px;line-height:1.55;padding:6px 0">
+    <b>Sign in</b> — same account as the golf coach app.<br>
+    <span style="color:var(--mu)">Signed in there on this device already? Just reload.</span>
+    <input id="si-email" type="email" placeholder="email" autocomplete="email"
+      value="${(localStorage.getItem('gc_email')||'').replace(/"/g,'')}"
+      style="width:100%;margin:10px 0 6px;padding:9px 11px;border:1px solid var(--b2);border-radius:9px;background:var(--s2);color:var(--tx);font-size:15px">
+    <button onclick="siSend()" style="padding:8px 14px;border-radius:9px;border:1px solid var(--b2);background:var(--sf);color:var(--tx)">Send code</button>
+    <textarea id="si-code" rows="2" placeholder="paste the code, or the whole link from the email"
+      style="width:100%;margin:12px 0 6px;padding:9px 11px;border:1px solid var(--b2);border-radius:9px;background:var(--s2);color:var(--tx);font-size:15px"></textarea>
+    <button onclick="siVerify()" style="padding:8px 14px;border-radius:9px;border:1px solid var(--ac);background:var(--sf);color:var(--ac)">Sign in</button>
+    <div id="si-msg" style="margin-top:10px;color:var(--mu)">${msg||''}</div></div>`;
+}
+function siMsg(t, bad){ const m = el('si-msg'); m.innerHTML = t; m.style.color = bad ? 'var(--rd)' : 'var(--mu)'; }
+
+async function siSend(){
+  const email = canonEmail(el('si-email').value);
+  if (!email.includes('@')) return siMsg('That doesn\'t look like an email address.', true);
+  siMsg('<span class="spin"></span> Sending…');
+  try {
+    await authFetch('otp', {email, create_user: false});
+    localStorage.setItem('gc_email', email);
+    siMsg('Sent to <b>'+email+'</b>. Paste the code (or the whole link) below.');
+  } catch(e){ siMsg('Couldn\'t send: '+e.message, true); }
+}
+
+async function siVerify(){
+  const email = canonEmail(el('si-email').value || localStorage.getItem('gc_email'));
+  const v = el('si-code').value.trim();
+  siMsg('<span class="spin"></span> Signing in…');
+  try {
+    const at = v.match(/access_token=([^&\s]+)/);
+    const th = v.match(/[?&](token_hash|token)=([^&\s]+)/);
+    if (at) {
+      const rt = v.match(/refresh_token=([^&\s]+)/);
+      writeSession({access_token: at[1], refresh_token: rt ? rt[1] : null, expires_in: 3600});
+    } else if (th || /^[0-9a-f]{20,}$/i.test(v)) {
+      const t = v.match(/[?&]type=([^&\s]+)/);
+      writeSession(await authFetch('verify', {type: t ? t[1] : 'magiclink',
+        token_hash: th ? decodeURIComponent(th[2]) : v}));
+    } else if (/^[0-9]{4,12}$/.test(v)) {
+      try { writeSession(await authFetch('verify', {type:'email', email, token:v})); }
+      catch { writeSession(await authFetch('verify', {type:'magiclink', email, token:v})); }
+    } else {
+      return siMsg('That is neither the code nor the link.', true);
+    }
+    el('banner').style.display = '';
+    boot(true);
+  } catch(e){
+    siMsg('That did not work: '+e.message+'<br>Verifying as <b>'+(email||'(no email)')+'</b>. A used code is spent — request a new one.', true);
+  }
+}
+
 /* ── boot ────────────────────────────────────────────────────── */
 async function boot(withBanner){
   try {
     await loadWeek();
     render();
   } catch(e){
+    if (e instanceof NeedSignIn) { showSignIn(); return; }
     el('grid').innerHTML = `<div style="grid-column:1/-1;color:var(--rd);font-size:13px;padding:10px 0">
       Couldn't load: ${e.message}</div>`;
   }
